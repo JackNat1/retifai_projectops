@@ -1,0 +1,33 @@
+# ReTiFai ProjectOps - FastAPI backend (uvicorn) service
+#
+# Runs the backend behind nginx, bound to localhost only so that nginx is the
+# single public entry point. Install to /etc/systemd/system/ on the NAS, then:
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now retifai-projectops-backend
+#
+# Adjust the values marked "EDIT:" to match where you copied the project.
+
+[Unit]
+Description=ReTiFai ProjectOps FastAPI backend
+After=network.target
+
+[Service]
+Type=simple
+
+# EDIT: user/group that owns the deployment directory.
+User=retifai
+Group=retifai
+
+# EDIT: directory that contains the backend/ package and the venv/.
+WorkingDirectory=/srv/retifai-projectops
+
+# Use PostgreSQL in production (falls back to a local SQLite file if unset).
+# EDIT: uncomment and set your connection string.
+# Environment=DATABASE_URL=postgresql+psycopg2://retifai:CHANGEME@127.0.0.1:5432/retifai_projectops
+
+ExecStart=/srv/retifai-projectops/venv/bin/python3 -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

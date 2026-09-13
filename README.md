@@ -77,7 +77,7 @@ npm install
 npm run dev
 ```
 
-The frontend will be available at the URL provided in the terminal (usually `http://localhost:5173`). Vite is configured to proxy `/api` requests to the backend at `http://localhost:8000`.
+The frontend will be available at the URL provided in the terminal (usually `http://localhost:5173`). For local development, Vite is configured to proxy `/api` requests to the backend at `http://localhost:8000`. In production this proxying is handled by nginx instead (see [Production Deployment on a UGREEN NAS](#production-deployment-on-a-ugreen-nas-nginx-reverse-proxy)).
 
 ### 5. Start Everything (Backend & Frontend)
 
@@ -87,6 +87,108 @@ To start both the backend and frontend with a single command:
 chmod +x ./scripts/start_all.sh
 ./scripts/start_all.sh
 ```
+
+## Production Deployment on a UGREEN NAS (nginx reverse proxy)
+
+In production the app is deployed on the UGREEN NAS using the NAS's existing
+**nginx** as the reverse proxy (replacing any separate reverse-proxy manager).
+nginx serves the pre-built React frontend as static files and reverse-proxies
+API traffic to the FastAPI backend. There is no Node/Vite dev server in
+production.
+
+```
+Browser ──▶ nginx (:80/:443)
+              ├── /            → static SPA files (dist/)
+              └── /api/*       → http://127.0.0.1:8000  (uvicorn / FastAPI)
+```
+
+The `/api/` → backend rule strips the `/api` prefix, mirroring the Vite dev
+proxy, so backend routes stay at the root (e.g. `/api/projects` reaches the
+backend as `/projects`).
+
+Sample config files are provided under `deploy/`:
+
+- `deploy/nginx/retifai-projectops.conf` — nginx site (static + reverse proxy).
+- `deploy/systemd/retifai-projectops-backend.service` — uvicorn service unit.
+
+### 1. Build the frontend
+
+On a machine with Node installed (your dev machine or the NAS):
+
+```bash
+npm ci
+npm run build
+```
+
+This produces a static bundle in `dist/`.
+
+### 2. Lay out files on the NAS
+
+Copy the project to the NAS (paths below match the sample configs; adjust as
+needed):
+
+```bash
+# On the NAS
+sudo mkdir -p /srv/retifai-projectops
+# Copy the repo (backend/, scripts/, etc.) into /srv/retifai-projectops
+# Copy the built frontend into /srv/retifai-projectops/dist
+```
+
+### 3. Set up and run the backend
+
+```bash
+cd /srv/retifai-projectops
+python3 -m venv venv
+./venv/bin/pip install --upgrade pip
+./venv/bin/pip install -r backend/requirements.txt
+```
+
+Run the backend bound to **localhost only** (nginx is the single public entry
+point):
+
+```bash
+./venv/bin/python3 -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000
+```
+
+To run it as a managed service, install the provided unit and enable it:
+
+```bash
+sudo cp deploy/systemd/retifai-projectops-backend.service /etc/systemd/system/
+# Edit the User/Group/WorkingDirectory (and DATABASE_URL) in the unit first.
+sudo systemctl daemon-reload
+sudo systemctl enable --now retifai-projectops-backend
+```
+
+For production, set `DATABASE_URL` to your PostgreSQL instance (see
+[Additional Information](#additional-information)); if unset the backend falls
+back to a local SQLite file.
+
+### 4. Configure nginx
+
+Install the provided site config into the NAS nginx configuration, editing
+`server_name` and `root` to match your setup:
+
+```bash
+sudo cp deploy/nginx/retifai-projectops.conf /etc/nginx/conf.d/retifai-projectops.conf
+# On distros using sites-available/sites-enabled, copy to sites-available and
+# symlink it into sites-enabled instead.
+
+sudo nginx -t          # validate configuration
+sudo nginx -s reload   # or: sudo systemctl reload nginx
+```
+
+### 5. Verify
+
+```bash
+# Static frontend served by nginx
+curl -I http://<nas-host>/
+
+# API reverse-proxied to the backend (prefix stripped)
+curl http://<nas-host>/api/projects
+```
+
+The frontend should load and API calls should succeed through nginx without a
+running Vite dev server.
 
 ## Key Features
 
