@@ -1,0 +1,15 @@
+{
+  "name": "ReTiFai ProjectOps",
+  "install": "python3 -m venv venv && ./venv/bin/pip install --upgrade pip && ./venv/bin/pip install -r backend/requirements.txt && npm ci",
+  "terminals": [
+    {
+      "name": "backend",
+      "command": "./venv/bin/python3 -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000"
+    },
+    {
+      "name": "frontend",
+      "command": "npm run dev -- --host"
+    }
+  ],
+  "ports": [8000, 5173]
+}
